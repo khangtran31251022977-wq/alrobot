@@ -212,6 +212,14 @@
   }
   #toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
 
+  /* COORD ROW */
+  .coord-row{display:flex;gap:8px}
+  .coord-row .field{flex:1;margin-bottom:0}
+  .coord-wrap{margin-bottom:14px}
+
+  /* COPY COORD BTN */
+  .btn-copy{background:rgba(79,142,247,.15);color:var(--accent)}
+
   /* GPS MARKER */
   .gps-dot{
     width:16px;height:16px;border-radius:50%;background:var(--accent);
@@ -280,6 +288,18 @@
       <div class="field">
         <label>Ghi chú</label>
         <textarea id="f-notes" placeholder="Thông tin thêm, địa chỉ chi tiết…"></textarea>
+      </div>
+      <div class="coord-wrap">
+        <div class="coord-row">
+          <div class="field">
+            <label>Vĩ độ (Lat)</label>
+            <input id="f-lat" type="number" step="0.000001" placeholder="VD: 10.762622" oninput="onCoordInput()">
+          </div>
+          <div class="field">
+            <label>Kinh độ (Lng)</label>
+            <input id="f-lng" type="number" step="0.000001" placeholder="VD: 106.660172" oninput="onCoordInput()">
+          </div>
+        </div>
       </div>
       <div class="field">
         <label>Phân loại</label>
@@ -358,6 +378,9 @@ function buildPopupHTML(m){
       <button class="popup-btn btn-edit" onclick="editMarker('${m.id}')">✏️ Sửa</button>
       <button class="popup-btn btn-delete" onclick="deleteMarker('${m.id}')">🗑 Xoá</button>
     </div>
+    <div style="margin-top:8px">
+      <button class="popup-btn btn-copy" style="width:100%" onclick="copyCoords(${m.lat},${m.lng})">📋 Sao chép tọa độ</button>
+    </div>
   </div>`;
 }
 
@@ -397,6 +420,12 @@ function openAddModal(lat,lng){
   document.getElementById('f-name').value = '';
   document.getElementById('f-phone').value = '';
   document.getElementById('f-notes').value = '';
+  // Fill lat/lng from pending or map center
+  const c = map.getCenter();
+  document.getElementById('f-lat').value = (pendingLat||c.lat).toFixed(6);
+  document.getElementById('f-lng').value = (pendingLng||c.lng).toFixed(6);
+  pendingLat = parseFloat(document.getElementById('f-lat').value);
+  pendingLng = parseFloat(document.getElementById('f-lng').value);
   selectedCat = 'customer';
   renderCatGrid();
   document.getElementById('modal-overlay').classList.add('open');
@@ -429,6 +458,8 @@ function editMarker(id){
   document.getElementById('f-name').value = m.name;
   document.getElementById('f-phone').value = m.phone||'';
   document.getElementById('f-notes').value = m.notes||'';
+  document.getElementById('f-lat').value = m.lat.toFixed(6);
+  document.getElementById('f-lng').value = m.lng.toFixed(6);
   selectedCat = m.category;
   renderCatGrid();
   map.closePopup();
@@ -452,33 +483,52 @@ function saveMarker(){
   if(!name){document.getElementById('f-name').focus();showToast('Vui lòng nhập tên');return;}
   const phone = document.getElementById('f-phone').value.trim();
   const notes = document.getElementById('f-notes').value.trim();
+  // Read lat/lng from inputs
+  const inputLat = parseFloat(document.getElementById('f-lat').value);
+  const inputLng = parseFloat(document.getElementById('f-lng').value);
+  if(isNaN(inputLat)||isNaN(inputLng)){showToast('Tọa độ không hợp lệ');return;}
   if(editId){
     const idx = markers.findIndex(m=>m.id===editId);
     if(idx>-1){
-      markers[idx] = {...markers[idx],name,phone,notes,category:selectedCat};
+      markers[idx] = {...markers[idx],name,phone,notes,category:selectedCat,lat:inputLat,lng:inputLng};
       saveMarkers();
       if(leafletMarkers[editId]){
+        leafletMarkers[editId].setLatLng([inputLat,inputLng]);
         leafletMarkers[editId].setIcon(makeIcon(catColor(selectedCat)));
         leafletMarkers[editId].setPopupContent(buildPopupHTML(markers[idx]));
       }
       showToast('Đã cập nhật');
     }
   } else {
-    let lat = pendingLat, lng = pendingLng;
-    if(!lat){const c=map.getCenter();lat=c.lat;lng=c.lng;}
-    const m = {id:genId(),name,phone,notes,category:selectedCat,lat,lng,ts:Date.now()};
+    const m = {id:genId(),name,phone,notes,category:selectedCat,lat:inputLat,lng:inputLng,ts:Date.now()};
     markers.push(m);
     saveMarkers();
-    const lm = L.marker([lat,lng],{icon:makeIcon(catColor(m.category))}).addTo(map);
+    const lm = L.marker([inputLat,inputLng],{icon:makeIcon(catColor(m.category))}).addTo(map);
     lm.bindPopup(buildPopupHTML(m),{maxWidth:280});
     leafletMarkers[m.id] = lm;
-    map.setView([lat,lng],17);
+    map.setView([inputLat,inputLng],17);
     setTimeout(()=>lm.openPopup(),300);
     showToast('Đã lưu địa điểm');
   }
   renderList();
   updateListCount();
   closeModal();
+}
+
+function onCoordInput(){
+  const lat = parseFloat(document.getElementById('f-lat').value);
+  const lng = parseFloat(document.getElementById('f-lng').value);
+  if(!isNaN(lat)) pendingLat = lat;
+  if(!isNaN(lng)) pendingLng = lng;
+}
+
+function copyCoords(lat,lng){
+  const text = `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
+  navigator.clipboard.writeText(text).then(()=>{
+    showToast('Đã sao chép tọa độ');
+  }).catch(()=>{
+    showToast('Không thể sao chép');
+  });
 }
 
 function closeModal(){
